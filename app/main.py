@@ -9,6 +9,8 @@ import asyncio # Non-blocking task management for real-time performance
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect # Async web framework for APIs and WebSockets
 from fastapi.middleware.cors import CORSMiddleware # Support Cross-Origin requests from different domains
 from fastapi.staticfiles import StaticFiles # Serve HTML/JS/CSS assets
+from fastapi.responses import RedirectResponse # Helper for URL redirection
+from pathlib import Path # Robust path handling
 from dotenv import load_dotenv # Secret management from .env files
 
 # Internal service integrations
@@ -34,8 +36,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Robust Static File Mounting
+BASE_DIR = Path(__file__).resolve().parent.parent
+static_dir = BASE_DIR / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+@app.get("/")
+async def root():
+    """Redirects root access to the static frontend."""
+    return RedirectResponse(url="/static/index.html")
 
 # Initialize services
 # Note: Instantiate inside the websocket endpoint or globally depending on thread safety
