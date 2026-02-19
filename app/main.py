@@ -9,7 +9,7 @@ import asyncio # Non-blocking task management for real-time performance
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect # Async web framework for APIs and WebSockets
 from fastapi.middleware.cors import CORSMiddleware # Support Cross-Origin requests from different domains
 from fastapi.staticfiles import StaticFiles # Serve HTML/JS/CSS assets
-from fastapi.responses import RedirectResponse # Helper for URL redirection
+from fastapi.responses import RedirectResponse, FileResponse # Helper for URL redirection and file serving
 from pathlib import Path # Robust path handling
 from dotenv import load_dotenv # Secret management from .env files
 
@@ -37,45 +37,36 @@ app.add_middleware(
 )
 
 # Robust Static File Mounting
-import os
-# Search for static folder in multiple possible locations
-possible_paths = [
-    os.path.join(os.getcwd(), "static"),
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"),
-    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-]
+# We find the absolute path to the 'static' directory relative to this file
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-static_path = None
-for path in possible_paths:
-    if os.path.exists(path) and os.path.isdir(path):
-        static_path = path
-        break
-
-if static_path:
-    logger.info(f"Found static directory at: {static_path}")
-    app.mount("/static", StaticFiles(directory=static_path), name="static")
-else:
-    logger.warning("Static directory not found in known locations.")
+# Mount static files for assets (css, js, etc.)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def root():
-    """Health check and redirect."""
+    """Serve the main frontend page directly at the root."""
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {
         "status": "online",
         "message": "Vikara AI Backend is Running!",
-        "frontend_path": "/static/index.html"
+        "note": "index.html not found in static folder"
     }
 
 @app.get("/debug")
 def debug_info():
     """Diagnostic endpoint to verify file structure on Render."""
-    import os
     return {
         "cwd": os.getcwd(),
         "file": __file__,
-        "ls_root": os.listdir("."),
-        "static_found": static_path,
-        "static_exists": os.path.exists("static") if not static_path else True
+        "base_dir": BASE_DIR,
+        "static_dir": STATIC_DIR,
+        "static_exists": os.path.exists(STATIC_DIR),
+        "index_exists": os.path.exists(os.path.join(STATIC_DIR, "index.html")),
+        "ls_static": os.listdir(STATIC_DIR) if os.path.exists(STATIC_DIR) else []
     }
 
 # Initialize services
