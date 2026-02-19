@@ -23,6 +23,11 @@ share_calendar.py
 verify_acl.py
 google_calendar_guide.md
 
+# Render CLI
+render.exe
+render-cli.zip
+render-cli-dist/
+
 # OS files
 .DS_Store
 Thumbs.db
