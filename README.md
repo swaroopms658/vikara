@@ -2,6 +2,8 @@
 # Voice Scheduling Agent
 
 A real-time voice agent that initiates a conversation, collects meeting details, confirms them, and creates a real calendar event — using only free tiers, developed on Windows, with a Python FastAPI backend.
+<img width="1839" height="763" alt="image" src="https://github.com/user-attachments/assets/b4d52b9c-cd8f-4174-a01b-95389d458c95" />
+
 
 ## Architecture
 
