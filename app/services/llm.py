@@ -18,7 +18,7 @@ class LLMService:
         if not self.api_key:
             logger.error("GROQ_API_KEY is not set")
             raise ValueError("GROQ_API_KEY is not set")
-        self.client = Groq(api_key=self.api_key)
+        self.client = Groq(api_key=self.api_key.strip())
 
     def get_response(self, messages, system_prompt):
         """

@@ -22,6 +22,15 @@ from app.services.calendar_service import CalendarService
 # Initialize environment configuration
 load_dotenv()
 
+# --- CRITICAL: Sanitize API keys ---
+# Environment variables (especially from Render dashboard or .env files)
+# can contain trailing newlines/whitespace that corrupt HTTP headers.
+# We must clean them BEFORE any SDK reads them.
+for key_name in ["GROQ_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY"]:
+    val = os.environ.get(key_name)
+    if val:
+        os.environ[key_name] = val.strip()
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
