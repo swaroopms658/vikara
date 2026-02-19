@@ -36,15 +36,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Robust Static File Mounting
-BASE_DIR = Path(__file__).resolve().parent.parent
-static_dir = BASE_DIR / "static"
-app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+# Static File Mounting
+# We use a relative path because Render/Uvicorn starts in the project root
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def root():
     """Redirects root access to the static frontend."""
     return RedirectResponse(url="/static/index.html")
+
+@app.get("/debug")
+def debug_info():
+    """Diagnostic endpoint to verify file structure on Render."""
+    import os
+    return {
+        "cwd": os.getcwd(),
+        "ls_root": os.listdir("."),
+        "static_exists": os.path.exists("static"),
+        "static_contents": os.listdir("static") if os.path.exists("static") else "Not found"
+    }
 
 # Initialize services
 # Note: Instantiate inside the websocket endpoint or globally depending on thread safety
