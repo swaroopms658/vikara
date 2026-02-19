@@ -49,9 +49,6 @@ class STTService:
             async def on_message(result):
                 # result is likely a Pydantic model or dict
                 try:
-                    # Generic log to see we got something
-                    logger.info(f"Deepgram Raw Message: {result}") 
-
                     # Check if it's a Results event (it might be Metadata etc)
                     # The SDK parses it into models.
                     # We look for 'channel' and 'alternatives'
@@ -62,13 +59,14 @@ class STTService:
                         alternatives = result.channel.alternatives
                         if alternatives and len(alternatives) > 0:
                             transcript = alternatives[0].transcript
+                            is_final = getattr(result, "is_final", False)
+                            speech_final = getattr(result, "speech_final", False)
+                            # Always log the transcript state for debugging
+                            logger.info(f"DG Result: text='{transcript}' is_final={is_final} speech_final={speech_final}")
                             if not transcript:
                                 return
                             
-                            # is_final is usually on the result object
-                            is_final = getattr(result, "is_final", False)
-                            speech_final = getattr(result, "speech_final", False)
-                            logger.info(f"Transcript: '{transcript}', is_final: {is_final}, speech_final: {speech_final}")
+                            # Treat either is_final or speech_final as actionable
                             # Treat either is_final or speech_final as actionable
                             effective_final = is_final or speech_final
                             if asyncio.iscoroutinefunction(on_message_callback):
