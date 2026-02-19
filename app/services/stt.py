@@ -40,7 +40,9 @@ class STTService:
                 language="en-US",
                 smart_format="true",
                 interim_results="true",
-                endpointing="300"
+                endpointing="300",
+                encoding="linear16",
+                sample_rate="16000"
             )
             
             # Enter the context manager manually to keep connection open

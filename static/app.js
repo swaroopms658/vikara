@@ -3,9 +3,10 @@
  * Manages Microphone streaming, WebSocket communication, and Premium UI updates.
  */
 
-let mediaRecorder; // Records audio from the microphone
 let socket; // WebSocket connection to the backend
-let audioContext; // unused, but kept for future WebAudio API expansion
+let audioContext; // Web Audio API context for raw PCM capture
+let audioProcessor; // ScriptProcessorNode for capturing raw audio
+let audioStream; // MediaStream from getUserMedia
 let audioQueue = []; // Queues incoming audio blobs from the server to play them sequentially
 let isPlaying = false; // Flag to prevent overlapping audio playback
 
@@ -103,20 +104,43 @@ function addBubble(text, sender) {
 }
 
 function startRecording(stream) {
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-            socket.send(event.data);
+    audioStream = stream;
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+    const source = audioContext.createMediaStreamSource(stream);
+
+    // ScriptProcessorNode captures raw PCM audio
+    audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    audioProcessor.onaudioprocess = (e) => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            const float32Data = e.inputBuffer.getChannelData(0);
+            // Convert float32 [-1, 1] to int16 [-32768, 32767]
+            const int16Data = new Int16Array(float32Data.length);
+            for (let i = 0; i < float32Data.length; i++) {
+                const s = Math.max(-1, Math.min(1, float32Data[i]));
+                int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            socket.send(int16Data.buffer);
         }
     };
-    mediaRecorder.start(1000);
+
+    source.connect(audioProcessor);
+    audioProcessor.connect(audioContext.destination);
     animateBars(true);
 }
 
 function stopConversation() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+    if (audioProcessor) {
+        audioProcessor.disconnect();
+        audioProcessor = null;
+    }
+    if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+    }
+    if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+        audioStream = null;
     }
     if (socket && socket.readyState === WebSocket.OPEN) {
         socket.close();
