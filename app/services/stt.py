@@ -40,7 +40,7 @@ class STTService:
                 language="en-US",
                 smart_format="true",
                 interim_results="true",
-                endpointing="300" 
+                endpointing="300"
             )
             
             # Enter the context manager manually to keep connection open
@@ -67,11 +67,14 @@ class STTService:
                             
                             # is_final is usually on the result object
                             is_final = getattr(result, "is_final", False)
-                            # logger.info(f"Transcript: {transcript}, Final: {is_final}")
+                            speech_final = getattr(result, "speech_final", False)
+                            logger.info(f"Transcript: '{transcript}', is_final: {is_final}, speech_final: {speech_final}")
+                            # Treat either is_final or speech_final as actionable
+                            effective_final = is_final or speech_final
                             if asyncio.iscoroutinefunction(on_message_callback):
-                                await on_message_callback(transcript, is_final)
+                                await on_message_callback(transcript, effective_final)
                             else:
-                                on_message_callback(transcript, is_final)
+                                on_message_callback(transcript, effective_final)
                         else:
                              logger.warning("Deepgram result has no alternatives")
                     else:
