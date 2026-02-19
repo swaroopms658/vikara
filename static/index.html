@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 
+        Vikara Voice Agent UI
+        Technologies: Tailwind CSS (Styling), Google Fonts (Typography).
+        Design: Glassmorphism / Dark Mode.
+    -->
+    <title>Vikara | Premium Voice Intelligence</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top left, #1e1b4b, #09090b);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(147, 51, 234, 0.7);
+            }
+
+            70% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 15px rgba(147, 51, 234, 0);
+            }
+
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(147, 51, 234, 0);
+            }
+        }
+
+        .shimmer {
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 3s infinite;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        #transcript-container::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #transcript-container::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .bubble-in {
+            animation: bubble 0.4s cubic-bezier(0, 0.5, 0.5, 1);
+        }
+
+        @keyframes bubble {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body class="text-white flex items-center justify-center p-4">
+
+    <div class="max-w-4xl w-full h-[85vh] flex flex-col items-center justify-center relative">
+
+        <!-- Animated Background Elements -->
+        <div class="absolute -top-24 -left-24 w-96 h-96 bg-purple-600/10 rounded-full blur-[100px] pointer-events-none">
+        </div>
+        <div
+            class="absolute -bottom-24 -right-24 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] pointer-events-none">
+        </div>
+
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1
+                class="text-5xl font-semibold tracking-tight bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent mb-2">
+                Vikara AI
+            </h1>
+            <p class="text-gray-400 text-lg">Your Autonomous Voice Scheduling Intelligence</p>
+        </div>
+
+        <!-- Main Card -->
+        <div class="glass w-full rounded-3xl p-8 flex flex-col overflow-hidden h-full relative">
+
+            <!-- Status Bar -->
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-3">
+                    <div id="status-dot" class="w-3 h-3 rounded-full bg-red-500"></div>
+                    <span id="status-text"
+                        class="text-sm font-medium uppercase tracking-widest text-gray-500">Disconnected</span>
+                </div>
+                <div class="text-xs text-gray-500 font-mono tracking-tighter" id="latency-text">
+                    CALENDAR SYNCED
+                </div>
+            </div>
+
+            <!-- Conversation Display -->
+            <div id="transcript-container" class="flex-grow overflow-y-auto mb-8 space-y-4 px-2">
+                <div class="text-gray-600 text-center italic mt-20" id="empty-state">
+                    "Hey Vikara, schedule a review meeting for tomorrow at 10 AM..."
+                </div>
+                <!-- Dynamic bubbles will be injected here -->
+            </div>
+
+            <!-- Visualization Area -->
+            <div class="h-16 flex items-center justify-center gap-1 mb-8">
+                <!-- Simple Waveform (Animated via JS) -->
+                <div class="w-1 h-2 bg-purple-500 rounded-full bar"></div>
+                <div class="w-1 h-3 bg-purple-400 rounded-full bar"></div>
+                <div class="w-1 h-8 bg-purple-300 rounded-full bar"></div>
+                <div class="w-1 h-4 bg-purple-400 rounded-full bar"></div>
+                <div class="w-1 h-6 bg-purple-500 rounded-full bar"></div>
+                <div class="w-1 h-2 bg-purple-400 rounded-full bar"></div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex items-center justify-center gap-6">
+                <button id="start-btn"
+                    class="group relative px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full font-semibold overflow-hidden hover:scale-105 transition-all active:scale-95 shadow-lg shadow-purple-500/20">
+                    <span class="relative z-10 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd"
+                                d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"
+                                clip-rule="evenodd"></path>
+                        </svg>
+                        Start Intelligence
+                    </span>
+                    <div class="absolute inset-0 shimmer opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                </button>
+
+                <button id="stop-btn"
+                    class="hidden px-8 py-4 border border-white/10 hover:bg-white/5 rounded-full font-semibold transition-all">
+                    End Session
+                </button>
+            </div>
+        </div>
+
+        <!-- Footer Info -->
+        <div class="mt-8 flex gap-8 text-gray-500 text-sm">
+            <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                Deepgram Nova-2
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
+                Groq Llama 3
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="w-1.5 h-1.5 rounded-full bg-pink-500"></div>
+                ElevenLabs TTS
+            </div>
+        </div>
+
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

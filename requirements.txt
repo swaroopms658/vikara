@@ -1,0 +1,8 @@
+fastapi # Core web framework
+uvicorn[standard] # ASGI server
+python-dotenv # Environment variable management
+deepgram-sdk # Speech-to-Text
+groq # Language Model
+elevenlabs # Text-to-Speech
+google-auth # Google Authentication
+google-api-python-client # Google Calendar API

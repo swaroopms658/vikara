@@ -1,0 +1,28 @@
+# Environment variables
+.env
+
+# Google Credentials (SENSITIVE)
+service_account.json
+*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env/
+
+# Logs
+*.log
+
+# Audio/Misc
+*.mp3
+*.wav
+test_body.json
+share_calendar.py
+verify_acl.py
+google_calendar_guide.md
+
+# OS files
+.DS_Store
+Thumbs.db
