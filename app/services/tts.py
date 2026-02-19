@@ -19,7 +19,7 @@ class TTSService:
         if not self.api_key:
             logger.error("ELEVENLABS_API_KEY is not set")
             raise ValueError("ELEVENLABS_API_KEY is not set")
-        self.client = ElevenLabs(api_key=self.api_key)
+        self.client = ElevenLabs(api_key=self.api_key.strip())
 
     
     def generate_audio(self, text):

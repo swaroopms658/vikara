@@ -21,7 +21,7 @@ class STTService:
         if not self.api_key:
             logger.error("DEEPGRAM_API_KEY is not set")
             raise ValueError("DEEPGRAM_API_KEY is not set")
-        self.dg_client = AsyncDeepgramClient(api_key=self.api_key)
+        self.dg_client = AsyncDeepgramClient(api_key=self.api_key.strip())
         self.connection = None
         self._socket_ctx = None
         self.listen_task = None
