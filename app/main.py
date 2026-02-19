@@ -37,8 +37,14 @@ app.add_middleware(
 )
 
 # Static File Mounting
-# We use a relative path because Render/Uvicorn starts in the project root
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# We use absolute paths to ensure Render can find the folder regardless of execution context
+import os
+current_file_path = os.path.realpath(__file__)
+app_dir = os.path.dirname(current_file_path)
+project_root = os.path.dirname(app_dir)
+static_path = os.path.join(project_root, "static")
+
+app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 @app.get("/")
 async def root():
