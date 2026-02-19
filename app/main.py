@@ -36,20 +36,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Static File Mounting
-# We use absolute paths to ensure Render can find the folder regardless of execution context
+# Robust Static File Mounting
 import os
-current_file_path = os.path.realpath(__file__)
-app_dir = os.path.dirname(current_file_path)
-project_root = os.path.dirname(app_dir)
-static_path = os.path.join(project_root, "static")
+# Search for static folder in multiple possible locations
+possible_paths = [
+    os.path.join(os.getcwd(), "static"),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+]
 
-app.mount("/static", StaticFiles(directory=static_path), name="static")
+static_path = None
+for path in possible_paths:
+    if os.path.exists(path) and os.path.isdir(path):
+        static_path = path
+        break
+
+if static_path:
+    logger.info(f"Found static directory at: {static_path}")
+    app.mount("/static", StaticFiles(directory=static_path), name="static")
+else:
+    logger.warning("Static directory not found in known locations.")
 
 @app.get("/")
 async def root():
-    """Redirects root access to the static frontend."""
-    return RedirectResponse(url="/static/index.html")
+    """Health check and redirect."""
+    return {
+        "status": "online",
+        "message": "Vikara AI Backend is Running!",
+        "frontend_path": "/static/index.html"
+    }
 
 @app.get("/debug")
 def debug_info():
@@ -57,9 +72,10 @@ def debug_info():
     import os
     return {
         "cwd": os.getcwd(),
+        "file": __file__,
         "ls_root": os.listdir("."),
-        "static_exists": os.path.exists("static"),
-        "static_contents": os.listdir("static") if os.path.exists("static") else "Not found"
+        "static_found": static_path,
+        "static_exists": os.path.exists("static") if not static_path else True
     }
 
 # Initialize services
