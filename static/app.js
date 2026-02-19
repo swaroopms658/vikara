@@ -3,9 +3,8 @@
  * Manages Microphone streaming, WebSocket communication, and Premium UI updates.
  */
 
+let mediaRecorder; // Records audio from the microphone
 let socket; // WebSocket connection to the backend
-let audioContext; // Web Audio API context for raw PCM capture
-let audioProcessor; // ScriptProcessorNode for capturing raw audio
 let audioStream; // MediaStream from getUserMedia
 let audioQueue = []; // Queues incoming audio blobs from the server to play them sequentially
 let isPlaying = false; // Flag to prevent overlapping audio playback
@@ -36,6 +35,7 @@ async function startConversation() {
 
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream = stream;
         document.getElementById('latency-text').textContent = "GROQ + DEEPGRAM ACTIVE";
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -104,39 +104,27 @@ function addBubble(text, sender) {
 }
 
 function startRecording(stream) {
-    audioStream = stream;
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    const source = audioContext.createMediaStreamSource(stream);
+    // Use webm/opus which Deepgram auto-detects
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
 
-    // ScriptProcessorNode captures raw PCM audio
-    audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    console.log('Audio MIME type:', mimeType);
 
-    audioProcessor.onaudioprocess = (e) => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            const float32Data = e.inputBuffer.getChannelData(0);
-            // Convert float32 [-1, 1] to int16 [-32768, 32767]
-            const int16Data = new Int16Array(float32Data.length);
-            for (let i = 0; i < float32Data.length; i++) {
-                const s = Math.max(-1, Math.min(1, float32Data[i]));
-                int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            socket.send(int16Data.buffer);
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+    mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0 && socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(event.data);
         }
     };
-
-    source.connect(audioProcessor);
-    audioProcessor.connect(audioContext.destination);
+    // Send chunks every 250ms for faster transcription
+    mediaRecorder.start(250);
     animateBars(true);
 }
 
 function stopConversation() {
-    if (audioProcessor) {
-        audioProcessor.disconnect();
-        audioProcessor = null;
-    }
-    if (audioContext) {
-        audioContext.close();
-        audioContext = null;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
     }
     if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());

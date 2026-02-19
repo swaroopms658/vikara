@@ -132,7 +132,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 while True:
                     data = await websocket.receive_bytes()
-                    # logger.info(f"Received audio chunk: {len(data)} bytes, Header: {data[:10].hex()}")
+                    logger.info(f"Received audio chunk: {len(data)} bytes, Header: {data[:10].hex()}")
                     await stt_service.send_audio(data)
             except WebSocketDisconnect:
                 logger.info("Client disconnected from receive_audio")
