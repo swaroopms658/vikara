@@ -30,13 +30,17 @@ class LLMService:
         all_messages = [{"role": "system", "content": system_prompt}] + messages
         
         try:
+            logger.info(f"Requesting LLM response using model: llama-3.3-70b-versatile")
             chat_completion = self.client.chat.completions.create(
                 messages=all_messages,
-                model="llama-3.1-8b-instant", # or another available model
+                model="llama-3.3-70b-versatile",
+                timeout=10.0 # Add explicit timeout
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
-            logger.error(f"Groq API error: {e}", exc_info=True)
+            logger.error(f"Groq API error (Detailed): {type(e).__name__}: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return "I'm sorry, I'm having trouble processing that right now."
 
     def extract_details(self, conversation_history):
