@@ -94,6 +94,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connected")
 
+    # Read audio encoding params from query string
+    sample_rate = websocket.query_params.get("sample_rate", "48000")
+    logger.info(f"Client sample rate: {sample_rate}")
+
     stt_service = STTService()
     
     # Conversation state
@@ -121,8 +125,8 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"STT Error: {error}")
 
     try:
-        # Connect to Deepgram
-        if not await stt_service.connect(on_transcript, on_error):
+        # Connect to Deepgram with linear16 encoding and client's sample rate
+        if not await stt_service.connect(on_transcript, on_error, encoding="linear16", sample_rate=sample_rate):
             await websocket.close(code=1011)
             return
 

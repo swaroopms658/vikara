@@ -1,10 +1,11 @@
 /**
  * Frontend logic for Vikara Voice Intelligence.
- * Manages Microphone streaming, WebSocket communication, and Premium UI updates.
+ * Manages Microphone streaming via Web Audio API (raw PCM),
+ * WebSocket communication, and Premium UI updates.
  */
 
-let mediaRecorder; // Records audio from the microphone
 let socket; // WebSocket connection to the backend
+let audioContext; // Web Audio API context
 let audioStream; // MediaStream from getUserMedia
 let audioQueue = []; // Queues incoming audio blobs from the server to play them sequentially
 let isPlaying = false; // Flag to prevent overlapping audio playback
@@ -38,13 +39,19 @@ async function startConversation() {
         audioStream = stream;
         document.getElementById('latency-text').textContent = "GROQ + DEEPGRAM ACTIVE";
 
+        // Create AudioContext to get native sample rate
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const sampleRate = audioContext.sampleRate;
+        console.log('Native sample rate:', sampleRate);
+
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        socket = new WebSocket(`${protocol}//${window.location.host}/ws/audio`);
+        // Pass the sample rate as a query param so the backend knows
+        socket = new WebSocket(`${protocol}//${window.location.host}/ws/audio?sample_rate=${sampleRate}`);
 
         socket.onopen = () => {
             updateStatus("Listening", "bg-green-500", true);
             if (emptyState) emptyState.style.display = 'none';
-            startRecording(stream);
+            startRecording(stream, sampleRate);
         };
 
         socket.onmessage = async (event) => {
@@ -103,28 +110,53 @@ function addBubble(text, sender) {
     transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
 }
 
-function startRecording(stream) {
-    // Use webm/opus which Deepgram auto-detects
-    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : 'audio/webm';
+/**
+ * Starts recording raw PCM audio using Web Audio API.
+ * Converts float32 samples to int16 (linear16) and sends over WebSocket.
+ */
+function startRecording(stream, sampleRate) {
+    const source = audioContext.createMediaStreamSource(stream);
 
-    console.log('Audio MIME type:', mimeType);
+    // Use ScriptProcessorNode to capture raw PCM
+    // Buffer size 4096 at 48kHz = ~85ms per chunk
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-    mediaRecorder = new MediaRecorder(stream, { mimeType });
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0 && socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(event.data);
+    processor.onaudioprocess = (e) => {
+        if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+        const float32 = e.inputBuffer.getChannelData(0);
+
+        // Convert float32 [-1.0, 1.0] to int16 [-32768, 32767]
+        const int16 = new Int16Array(float32.length);
+        for (let i = 0; i < float32.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32[i]));
+            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
         }
+
+        socket.send(int16.buffer);
     };
-    // Send chunks every 250ms for faster transcription
-    mediaRecorder.start(250);
+
+    source.connect(processor);
+    // Connect to destination to keep the processor alive
+    processor.connect(audioContext.destination);
+
+    // Store reference for cleanup
+    audioContext._processor = processor;
+    audioContext._source = source;
+
     animateBars(true);
 }
 
 function stopConversation() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
+    if (audioContext) {
+        if (audioContext._processor) {
+            audioContext._processor.disconnect();
+        }
+        if (audioContext._source) {
+            audioContext._source.disconnect();
+        }
+        audioContext.close().catch(() => { });
+        audioContext = null;
     }
     if (audioStream) {
         audioStream.getTracks().forEach(track => track.stop());

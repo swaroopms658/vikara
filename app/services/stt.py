@@ -26,13 +26,16 @@ class STTService:
         self._socket_ctx = None
         self.listen_task = None
 
-    async def connect(self, on_message_callback, on_error_callback):
+    async def connect(self, on_message_callback, on_error_callback, encoding="linear16", sample_rate="48000"):
         """
         Establishes a WebSocket connection with Deepgram.
         :param on_message_callback: Function to call when a transcript is received.
         :param on_error_callback: Function to call on STT failure.
+        :param encoding: Audio encoding format (default: linear16 for raw PCM).
+        :param sample_rate: Audio sample rate in Hz (default: 48000).
         """
         try:
+            logger.info(f"Connecting to Deepgram with encoding={encoding}, sample_rate={sample_rate}")
             # Create a websocket connection to Deepgram using v1.connect context manager manually
             # We configure options via kwargs
             self._socket_ctx = self.dg_client.listen.v1.connect(
@@ -40,7 +43,9 @@ class STTService:
                 language="en-US",
                 smart_format="true",
                 interim_results="true",
-                endpointing="300"
+                endpointing="300",
+                encoding=encoding,
+                sample_rate=sample_rate
             )
             
             # Enter the context manager manually to keep connection open
