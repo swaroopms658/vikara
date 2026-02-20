@@ -2,6 +2,8 @@
  * Frontend logic for Vikara Voice Intelligence.
  * Manages Microphone streaming via Web Audio API (raw PCM),
  * WebSocket communication, Browser TTS, and Premium UI updates.
+ * 
+ * KEY: Mic is muted while TTS is speaking to prevent feedback loops.
  */
 
 let socket;
@@ -9,6 +11,7 @@ let audioContext;
 let audioStream;
 let speechQueue = [];
 let isSpeaking = false;
+let micMuted = false; // CRITICAL: Prevents TTS audio from being re-captured by the mic
 
 // DOM Elements
 const startBtn = document.getElementById('start-btn');
@@ -54,7 +57,7 @@ async function startConversation() {
                 } else if (data.type === 'response') {
                     addBubble(data.text, 'agent');
                 } else if (data.type === 'speak') {
-                    // Use browser TTS to speak the response
+                    // Use browser TTS — mic is muted during speech
                     speakText(data.text);
                 }
             }
@@ -100,7 +103,8 @@ function addBubble(text, sender) {
 
 /**
  * Browser TTS using speechSynthesis API.
- * Queues text and speaks them in order.
+ * CRITICAL: Mutes the microphone while speaking to prevent feedback loops
+ * where the TTS audio gets picked up by the mic and re-transcribed.
  */
 function speakText(text) {
     speechQueue.push(text);
@@ -111,12 +115,13 @@ function processSpeechQueue() {
     if (isSpeaking || speechQueue.length === 0) return;
 
     isSpeaking = true;
+    micMuted = true; // MUTE MIC while speaking
     updateStatus("Speaking", "bg-purple-500", true);
+    console.log('[TTS] Speaking — mic MUTED');
 
     const text = speechQueue.shift();
     const utterance = new SpeechSynthesisUtterance(text);
 
-    // Configure voice
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
@@ -137,13 +142,19 @@ function processSpeechQueue() {
 
     utterance.onend = () => {
         isSpeaking = false;
-        updateStatus("Listening", "bg-green-500", true);
+        // Wait a brief moment before unmuting to avoid catching tail-end audio
+        setTimeout(() => {
+            micMuted = false;
+            console.log('[TTS] Done speaking — mic UNMUTED');
+            updateStatus("Listening", "bg-green-500", true);
+        }, 300);
         processSpeechQueue();
     };
 
     utterance.onerror = (e) => {
         console.error("Speech synthesis error:", e);
         isSpeaking = false;
+        micMuted = false;
         processSpeechQueue();
     };
 
@@ -153,15 +164,18 @@ function processSpeechQueue() {
 /**
  * Starts recording raw PCM audio using Web Audio API.
  * Converts float32 samples to int16 (linear16) and sends over WebSocket.
+ * SKIPS sending audio when micMuted is true (during TTS playback).
  */
 function startRecording(stream, sampleRate) {
     const source = audioContext.createMediaStreamSource(stream);
 
-    // Buffer size 4096 at 48kHz = ~85ms per chunk
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
     processor.onaudioprocess = (e) => {
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+        // CRITICAL: Don't send audio while TTS is speaking
+        if (micMuted) return;
 
         const float32 = e.inputBuffer.getChannelData(0);
 
@@ -189,6 +203,7 @@ function stopConversation() {
     speechSynthesis.cancel();
     speechQueue = [];
     isSpeaking = false;
+    micMuted = false;
 
     if (audioContext) {
         if (audioContext._processor) audioContext._processor.disconnect();
