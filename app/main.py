@@ -136,7 +136,12 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 while True:
                     data = await websocket.receive_bytes()
-                    logger.info(f"Received audio chunk: {len(data)} bytes, Header: {data[:10].hex()}")
+                    # Analyze volume: interpret as int16 PCM and compute RMS
+                    import struct
+                    samples = struct.unpack(f'<{len(data)//2}h', data)
+                    rms = (sum(s*s for s in samples) / len(samples)) ** 0.5
+                    max_amp = max(abs(s) for s in samples)
+                    logger.info(f"Audio: {len(data)}B, RMS={rms:.0f}, Max={max_amp}, Header={data[:10].hex()}")
                     await stt_service.send_audio(data)
             except WebSocketDisconnect:
                 logger.info("Client disconnected from receive_audio")
