@@ -79,6 +79,19 @@ llm_service = LLMService()
 tts_service = TTSService()
 calendar_service = CalendarService()
 
+SYSTEM_PROMPT = """You are Vikara, a concise voice assistant that helps schedule meetings.
+
+RULES:
+- NEVER assume or make up information the user hasn't explicitly said.
+- Ask for ONE piece of information at a time, in this order:
+  1. Attendee name
+  2. Meeting time
+  3. Meeting title/summary
+- Only say 'creating event' AFTER the user explicitly confirms all three details.
+- Keep responses to 1-2 short sentences maximum. You are a voice agent - be very concise.
+- Do NOT repeat back what the user said. Just acknowledge and ask for the next piece of info.
+- If you can't understand the user, ask them to repeat."""
+
 @app.websocket("/ws/audio")
 async def websocket_endpoint(websocket: WebSocket):
     """
@@ -97,50 +110,71 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Conversation state
     messages = [
-        {"role": "system", "content": "You are Vikara, an intelligent voice assistant that helps schedule meetings. "
-         "- Ask for the attendee's name if not provided.\n"
-         "- Ask for the desired meeting time if not provided.\n"
-         "- Ask for the meeting summary/title if not provided.\n"
-         "- Once you have the name, time, and title, ask for confirmation. If confirmed, say 'creating event'.\n"
-         "- Output strictly text that should be spoken. Keep responses concise."}
+        {"role": "system", "content": SYSTEM_PROMPT}
     ]
 
     # Queue for transcripts to process
     transcript_queue = asyncio.Queue()
+    
+    # Flag to pause audio processing while agent is speaking
+    agent_speaking = False
 
     try:
-        # Task 1: Receive audio and feed to STT
-        async def receive_audio():
-            """Continuously receives raw PCM chunks and feeds them to Groq Whisper STT."""
+        # Task 1: Receive ALL messages (binary audio + text control signals)
+        async def receive_messages():
+            """Receives both audio bytes and control messages from the client."""
+            nonlocal agent_speaking
             try:
                 while True:
-                    data = await websocket.receive_bytes()
+                    msg = await websocket.receive()
+                    
+                    if msg["type"] == "websocket.receive":
+                        if "bytes" in msg and msg["bytes"]:
+                            # Binary data = audio chunk
+                            data = msg["bytes"]
+                            
+                            # Skip processing audio while agent is speaking
+                            if agent_speaking:
+                                continue
 
-                    # Feed audio to STT (it buffers and detects speech)
-                    transcript = await stt_service.add_audio(data)
-
-                    if transcript:
-                        logger.info(f"Transcript received: '{transcript}'")
-                        transcript_queue.put_nowait(transcript)
-                        # Send transcript to UI
-                        try:
-                            await websocket.send_json({"type": "transcript", "text": transcript})
-                        except:
-                            pass
+                            # Feed audio to STT
+                            transcript = await stt_service.add_audio(data)
+                            if transcript:
+                                logger.info(f"Transcript received: '{transcript}'")
+                                transcript_queue.put_nowait(transcript)
+                                try:
+                                    await websocket.send_json({"type": "transcript", "text": transcript})
+                                except:
+                                    pass
+                        
+                        elif "text" in msg and msg["text"]:
+                            # Text data = control signal
+                            try:
+                                data = json.loads(msg["text"])
+                                if data.get("type") == "unmute":
+                                    logger.info("Client: TTS done, resuming audio")
+                                    await stt_service.flush_buffer()
+                                    agent_speaking = False
+                            except json.JSONDecodeError:
+                                pass
+                    
+                    elif msg["type"] == "websocket.disconnect":
+                        break
+                        
             except WebSocketDisconnect:
-                logger.info("Client disconnected from receive_audio")
-                # Try to transcribe any remaining audio
-                remaining = await stt_service.force_transcribe()
-                if remaining:
-                    transcript_queue.put_nowait(remaining)
+                logger.info("Client disconnected")
+                # Transcribe remaining audio
+                if not agent_speaking:
+                    remaining = await stt_service.force_transcribe()
+                    if remaining:
+                        transcript_queue.put_nowait(remaining)
             except Exception as e:
-                logger.error(f"Error receiving audio: {e}")
+                logger.error(f"Error in receive_messages: {e}")
 
         # Task 2: Process transcripts and generate responses
         async def process_conversation():
-            """
-            Main brain: Waits for transcripts -> LLM response -> Sends text for browser TTS.
-            """
+            """Main brain: Waits for transcripts -> LLM response -> Browser TTS."""
+            nonlocal agent_speaking
             logger.info("Starting conversation processing loop")
             while True:
                 user_text = await transcript_queue.get()
@@ -153,31 +187,31 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Get LLM response
                 logger.info("Calling Groq LLM...")
                 response_text = await asyncio.to_thread(
-                    llm_service.get_response, messages, system_prompt=messages[0]['content']
+                    llm_service.get_response, messages, system_prompt=SYSTEM_PROMPT
                 )
                 messages.append({"role": "assistant", "content": response_text})
-
                 logger.info(f"LLM Response: {response_text}")
 
-                # Send text response to UI (browser handles TTS via speechSynthesis)
+                # MUTE mic and flush buffer BEFORE sending TTS
+                agent_speaking = True
+                await stt_service.flush_buffer()
+                
+                # Send response + speak command to browser
                 try:
                     await websocket.send_json({"type": "response", "text": response_text})
-                    # Also send a speak command so the browser knows to use TTS
                     await websocket.send_json({"type": "speak", "text": response_text})
                 except Exception as e:
                     logger.error(f"Error sending response: {e}")
 
-                # Calendar event creation detection
+                # Calendar event creation
                 if "creating event" in response_text.lower():
                     logger.info("Agent indicates event creation. Extracting details...")
-
                     extraction_json = await asyncio.to_thread(llm_service.extract_details, messages)
                     if extraction_json:
                         try:
                             details = json.loads(extraction_json)
                             logger.info(f"Extracted details: {details}")
 
-                            # Handle potential nested 'meeting' key
                             if "meeting" in details and isinstance(details["meeting"], dict):
                                 details = details["meeting"]
 
@@ -191,17 +225,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                     calendar_service.create_event, summary, start_time, duration, attendee_email
                                 )
                                 if event:
-                                    success_msg = "I have successfully scheduled the meeting."
+                                    success_msg = "Meeting scheduled successfully."
                                     await websocket.send_json({"type": "response", "text": success_msg})
                                     await websocket.send_json({"type": "speak", "text": success_msg})
                                 else:
-                                    error_msg = "Sorry, I couldn't schedule the meeting. Please try again."
+                                    error_msg = "Sorry, I couldn't schedule the meeting."
                                     await websocket.send_json({"type": "response", "text": error_msg})
                                     await websocket.send_json({"type": "speak", "text": error_msg})
                         except Exception as e:
                             logger.error(f"Error parsing extraction: {e}")
 
-        receive_task = asyncio.create_task(receive_audio())
+        receive_task = asyncio.create_task(receive_messages())
         process_task = asyncio.create_task(process_conversation())
 
         await asyncio.gather(receive_task, process_task)

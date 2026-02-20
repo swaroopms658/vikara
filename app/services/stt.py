@@ -134,6 +134,13 @@ class STTService:
             self._reset_buffer()
             return None
 
+    async def flush_buffer(self):
+        """Discard all buffered audio without transcribing. Used when agent speaks."""
+        async with self._lock:
+            if len(self.audio_buffer) > 0:
+                logger.info(f"Flushing {len(self.audio_buffer)} bytes of buffered audio")
+            self._reset_buffer()
+
     async def finish(self):
         """Clean up resources."""
         self._reset_buffer()
