@@ -1,16 +1,16 @@
 /**
  * Frontend logic for Vikara Voice Intelligence.
  * Manages Microphone streaming via Web Audio API (raw PCM),
- * WebSocket communication, and Premium UI updates.
+ * WebSocket communication, Browser TTS, and Premium UI updates.
  */
 
-let socket; // WebSocket connection to the backend
-let audioContext; // Web Audio API context
-let audioStream; // MediaStream from getUserMedia
-let audioQueue = []; // Queues incoming audio blobs from the server to play them sequentially
-let isPlaying = false; // Flag to prevent overlapping audio playback
+let socket;
+let audioContext;
+let audioStream;
+let speechQueue = [];
+let isSpeaking = false;
 
-// DOM Elements: Used to update the UI state and markers
+// DOM Elements
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
 const statusText = document.getElementById('status-text');
@@ -19,14 +19,7 @@ const transcriptContainer = document.getElementById('transcript-container');
 const emptyState = document.getElementById('empty-state');
 const bars = document.querySelectorAll('.bar');
 
-/**
- * Initializes the conversation: Gets mic access and opens the WebSocket.
- */
 startBtn.onclick = startConversation;
-
-/**
- * Ends the session: Stops recording and closes the socket.
- */
 stopBtn.onclick = stopConversation;
 
 async function startConversation() {
@@ -37,7 +30,7 @@ async function startConversation() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         audioStream = stream;
-        document.getElementById('latency-text').textContent = "GROQ + DEEPGRAM ACTIVE";
+        document.getElementById('latency-text').textContent = "GROQ WHISPER + LLM ACTIVE";
 
         // Create AudioContext to get native sample rate
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -45,7 +38,6 @@ async function startConversation() {
         console.log('Native sample rate:', sampleRate);
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Pass the sample rate as a query param so the backend knows
         socket = new WebSocket(`${protocol}//${window.location.host}/ws/audio?sample_rate=${sampleRate}`);
 
         socket.onopen = () => {
@@ -61,12 +53,10 @@ async function startConversation() {
                     addBubble(data.text, 'user');
                 } else if (data.type === 'response') {
                     addBubble(data.text, 'agent');
+                } else if (data.type === 'speak') {
+                    // Use browser TTS to speak the response
+                    speakText(data.text);
                 }
-            } else {
-                // Audio binary
-                const blob = event.data;
-                audioQueue.push(blob);
-                processAudioQueue();
             }
         };
 
@@ -87,13 +77,11 @@ async function startConversation() {
     }
 }
 
-/** Updates status text and UI color markers. */
 function updateStatus(text, colorClass, pulse = false) {
     statusText.textContent = text;
     statusDot.className = `w-3 h-3 rounded-full ${colorClass} ${pulse ? 'pulse' : ''}`;
 }
 
-/** Adds a chat bubble to the UI. Sender is 'user' or 'agent'. */
 function addBubble(text, sender) {
     const bubble = document.createElement('div');
     bubble.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'} bubble-in`;
@@ -111,13 +99,64 @@ function addBubble(text, sender) {
 }
 
 /**
+ * Browser TTS using speechSynthesis API.
+ * Queues text and speaks them in order.
+ */
+function speakText(text) {
+    speechQueue.push(text);
+    processSpeechQueue();
+}
+
+function processSpeechQueue() {
+    if (isSpeaking || speechQueue.length === 0) return;
+
+    isSpeaking = true;
+    updateStatus("Speaking", "bg-purple-500", true);
+
+    const text = speechQueue.shift();
+    const utterance = new SpeechSynthesisUtterance(text);
+
+    // Configure voice
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    // Try to find a good English voice
+    const voices = speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v =>
+        v.name.includes('Google') && v.lang.startsWith('en')
+    ) || voices.find(v =>
+        v.lang.startsWith('en') && v.name.includes('Female')
+    ) || voices.find(v =>
+        v.lang.startsWith('en')
+    );
+
+    if (preferredVoice) {
+        utterance.voice = preferredVoice;
+    }
+
+    utterance.onend = () => {
+        isSpeaking = false;
+        updateStatus("Listening", "bg-green-500", true);
+        processSpeechQueue();
+    };
+
+    utterance.onerror = (e) => {
+        console.error("Speech synthesis error:", e);
+        isSpeaking = false;
+        processSpeechQueue();
+    };
+
+    speechSynthesis.speak(utterance);
+}
+
+/**
  * Starts recording raw PCM audio using Web Audio API.
  * Converts float32 samples to int16 (linear16) and sends over WebSocket.
  */
 function startRecording(stream, sampleRate) {
     const source = audioContext.createMediaStreamSource(stream);
 
-    // Use ScriptProcessorNode to capture raw PCM
     // Buffer size 4096 at 48kHz = ~85ms per chunk
     const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
@@ -137,10 +176,8 @@ function startRecording(stream, sampleRate) {
     };
 
     source.connect(processor);
-    // Connect to destination to keep the processor alive
     processor.connect(audioContext.destination);
 
-    // Store reference for cleanup
     audioContext._processor = processor;
     audioContext._source = source;
 
@@ -148,13 +185,14 @@ function startRecording(stream, sampleRate) {
 }
 
 function stopConversation() {
+    // Stop speech synthesis
+    speechSynthesis.cancel();
+    speechQueue = [];
+    isSpeaking = false;
+
     if (audioContext) {
-        if (audioContext._processor) {
-            audioContext._processor.disconnect();
-        }
-        if (audioContext._source) {
-            audioContext._source.disconnect();
-        }
+        if (audioContext._processor) audioContext._processor.disconnect();
+        if (audioContext._source) audioContext._source.disconnect();
         audioContext.close().catch(() => { });
         audioContext = null;
     }
@@ -174,36 +212,8 @@ function resetUI() {
     stopBtn.classList.add('hidden');
 }
 
-/** Plays audio synthesize blobs in the correct order. */
-async function processAudioQueue() {
-    if (isPlaying || audioQueue.length === 0) return;
-
-    isPlaying = true;
-    updateStatus("Speaking", "bg-purple-500", true);
-
-    const blob = audioQueue.shift();
-    const audioUrl = URL.createObjectURL(blob);
-    const audio = new Audio(audioUrl);
-
-    audio.onended = () => {
-        isPlaying = false;
-        updateStatus("Listening", "bg-green-500", true);
-        URL.revokeObjectURL(audioUrl);
-        processAudioQueue();
-    };
-
-    try {
-        await audio.play();
-    } catch (e) {
-        console.error("Error playing audio:", e);
-        isPlaying = false;
-        processAudioQueue();
-    }
-}
-
 let barInterval;
 
-/** Controls the visual bar animation while thinking/speaking. */
 function animateBars(active) {
     if (barInterval) clearInterval(barInterval);
     if (active) {
@@ -219,4 +229,10 @@ function animateBars(active) {
             bar.style.height = '8px';
         });
     }
+}
+
+// Preload voices (Chrome loads voices asynchronously)
+if (typeof speechSynthesis !== 'undefined') {
+    speechSynthesis.getVoices();
+    speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 }
