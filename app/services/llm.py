@@ -30,10 +30,10 @@ class LLMService:
         all_messages = [{"role": "system", "content": system_prompt}] + messages
         
         try:
-            logger.info(f"Requesting LLM response using model: llama-3.3-70b-versatile")
+            logger.info(f"Requesting LLM response using model: llama-3.1-8b-instant")
             chat_completion = self.client.chat.completions.create(
                 messages=all_messages,
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 timeout=10.0 # Add explicit timeout
             )
             return chat_completion.choices[0].message.content
