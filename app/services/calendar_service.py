@@ -64,11 +64,11 @@ class CalendarService:
                 'summary': summary,
                 'start': {
                     'dateTime': start_dt.isoformat(),
-                    'timeZone': 'UTC',
+                    'timeZone': 'Asia/Kolkata',
                 },
                 'end': {
                     'dateTime': end_dt.isoformat(),
-                    'timeZone': 'UTC',
+                    'timeZone': 'Asia/Kolkata',
                 },
             }
             

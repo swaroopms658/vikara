@@ -6,11 +6,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DEEPGRAM_API_KEY
-        sync: false
       - key: GROQ_API_KEY
-        sync: false
-      - key: ELEVENLABS_API_KEY
         sync: false
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false

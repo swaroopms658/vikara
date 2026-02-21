@@ -139,24 +139,28 @@ function processSpeechQueue() {
 
     utterance.onend = () => {
         isSpeaking = false;
-        // Wait 500ms after TTS finishes before unmuting to avoid echo
+
+        // If there are more items in the queue, speak them first (stay muted)
+        if (speechQueue.length > 0) {
+            processSpeechQueue();
+            return;
+        }
+
+        // Queue is empty — wait 500ms then unmute
         setTimeout(() => {
             micMuted = false;
-            console.log('[TTS] Done speaking — mic UNMUTED');
+            console.log('[TTS] All speech done — mic UNMUTED');
             updateStatus("Listening", "bg-green-500", true);
-            // Tell the server we're done speaking so it can accept audio again
             if (socket && socket.readyState === WebSocket.OPEN) {
                 socket.send(JSON.stringify({ type: "unmute" }));
             }
         }, 500);
-        processSpeechQueue();
     };
 
     utterance.onerror = (e) => {
         console.error("Speech synthesis error:", e);
         isSpeaking = false;
         micMuted = false;
-        // Tell server to unmute even on error
         if (socket && socket.readyState === WebSocket.OPEN) {
             socket.send(JSON.stringify({ type: "unmute" }));
         }

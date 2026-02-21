@@ -1,5 +1,5 @@
 
-# Voice Scheduling Agent
+# Vikara AI - Voice Scheduling Agent
 
 A real-time voice agent that initiates a conversation, collects meeting details, confirms them, and creates a real calendar event — using only free tiers, developed on Windows, with a Python FastAPI backend.
 <img width="1839" height="763" alt="image" src="https://github.com/user-attachments/assets/b4d52b9c-cd8f-4174-a01b-95389d458c95" />
@@ -8,19 +8,17 @@ A real-time voice agent that initiates a conversation, collects meeting details,
 ## Architecture
 
 - **Backend**: FastAPI (Python)
-- **STT**: Deepgram (Free Tier)
-- **LLM**: Groq (Free Tier, Llama 3)
-- **TTS**: ElevenLabs (Free Tier)
+- **STT**: Groq Whisper (Free Tier)
+- **LLM**: Groq Llama 3.1 (Free Tier)
+- **TTS**: Browser speechSynthesis API
 - **Calendar**: Google Calendar API
-- **Transport**: WebSocket
+- **Transport**: WebSocket (raw PCM audio)
 
 ## Prerequisites
 
 You will need API keys for the following services:
-1.  **Deepgram**: [https://console.deepgram.com/](https://console.deepgram.com/)
-2.  **Groq**: [https://console.groq.com/](https://console.groq.com/)
-3.  **ElevenLabs**: [https://elevenlabs.io/](https://elevenlabs.io/)
-4.  **Google Calendar API**:
+1.  **Groq**: [https://console.groq.com/](https://console.groq.com/) — Used for both STT (Whisper) and LLM (Llama 3.1)
+2.  **Google Calendar API**:
     -   Create a Project in Google Cloud Console.
     -   Enable "Google Calendar API".
     -   Create a Service Account and download the JSON key file.
@@ -36,9 +34,7 @@ You will need API keys for the following services:
     ```bash
     cp .env.example .env
     ```
-    For Google Calendar, either provide the path to your Service Account JSON in `GOOGLE_SERVICE_ACCOUNT_JSON` or paste the content (if utilizing the logic to parse it, current implementation expects a file path).
-    
-    *Recommendation*: For local testing, put the `service_account.json` in the project root and set `GOOGLE_SERVICE_ACCOUNT_JSON=service_account.json` in `.env`.
+    For Google Calendar, put the `service_account.json` in the project root and set `GOOGLE_SERVICE_ACCOUNT_JSON=service_account.json` in `.env`.
 
 3.  **Install Dependencies**:
     ```bash
@@ -49,9 +45,13 @@ You will need API keys for the following services:
     ```bash
     uvicorn app.main:app --reload
     ```
+    Or on Windows:
+    ```bash
+    run.bat
+    ```
 
 5.  **Access the App**:
-    Open [http://localhost:8000/static/index.html](http://localhost:8000/static/index.html) in your browser.
+    Open [http://localhost:8000](http://localhost:8000) in your browser.
 
 ## Deployment to Render
 
@@ -66,9 +66,8 @@ You will need API keys for the following services:
 3.  **Configure Render**:
     -   **Runtime**: Python 3
     -   **Build Command**: `pip install -r requirements.txt`
-    -   **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port 10000`
-    -   **Environment Variables**: Add all variables from your `.env` file (`DEEPGRAM_API_KEY`, `GROQ_API_KEY`, etc.).
-        -   For `GOOGLE_SERVICE_ACCOUNT_JSON`, you can paste the JSON content if you modify the code to parse it, or simpler: Upload the file as a "Secret File" in Render (Advanced settings) to `/etc/secrets/service_account.json` and set the env var to that path.
+    -   **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+    -   **Environment Variables**: Add `GROQ_API_KEY` and optionally `GOOGLE_SERVICE_ACCOUNT_JSON`.
 
 4.  **Deploy**:
     Click "Create Web Service". Once deployed, you will get a public URL.
@@ -78,6 +77,6 @@ You will need API keys for the following services:
 1.  Open the web page.
 2.  Click "Start Conversation".
 3.  Speak to the agent (e.g., "Hi, I'd like to schedule a meeting with John.").
-4.  The agent will ask for details (Time, Title).
+4.  The agent will ask for details one at a time (Name, Time, Title).
 5.  Confirm the details.
 6.  The agent will say "creating event" and the event will appear in your Google Calendar.

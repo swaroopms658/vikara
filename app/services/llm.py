@@ -23,18 +23,21 @@ class LLMService:
     def get_response(self, messages, system_prompt):
         """
         Generates a conversational response from the LLM.
-        :param messages: List of previous conversation turns.
-        :param system_prompt: The persona/instructions for the model.
+        :param messages: List of previous conversation turns (already includes system prompt).
+        :param system_prompt: The persona/instructions for the model (used only if not in messages).
         """
-        # Prepare messages
-        all_messages = [{"role": "system", "content": system_prompt}] + messages
+        # Use messages as-is if they already contain a system prompt
+        if messages and messages[0].get("role") == "system":
+            all_messages = messages
+        else:
+            all_messages = [{"role": "system", "content": system_prompt}] + messages
         
         try:
             logger.info(f"Requesting LLM response using model: llama-3.1-8b-instant")
             chat_completion = self.client.chat.completions.create(
                 messages=all_messages,
                 model="llama-3.1-8b-instant",
-                timeout=10.0 # Add explicit timeout
+                timeout=10.0
             )
             return chat_completion.choices[0].message.content
         except Exception as e:
