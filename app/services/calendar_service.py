@@ -24,21 +24,29 @@ class CalendarService:
 
     def _authenticate(self):
         """Internal authentication logic: Checks for Service Account credentials."""
-        # Determine authentication method based on env vars
-        # Prioritize Service Account
         sa_info = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
         if sa_info:
-            # If it's a path
+            # Option 1: It's a file path that exists
             if os.path.exists(sa_info):
+                logger.info(f"Loading Google credentials from file: {sa_info}")
                 self.creds = service_account.Credentials.from_service_account_file(
                     sa_info, scopes=self.scopes
                 )
             else:
-                 # Assume it's JSON content (would need parsing, skipping for now to keep simple)
-                 logger.warning("GOOGLE_SERVICE_ACCOUNT_JSON provided but file not found. Assuming content parsing not implemented yet.")
+                # Option 2: It's raw JSON content (e.g., from Render env var)
+                try:
+                    import json
+                    sa_dict = json.loads(sa_info)
+                    logger.info("Loading Google credentials from JSON env var content")
+                    self.creds = service_account.Credentials.from_service_account_info(
+                        sa_dict, scopes=self.scopes
+                    )
+                except (json.JSONDecodeError, ValueError) as e:
+                    logger.error(f"GOOGLE_SERVICE_ACCOUNT_JSON is not a valid file path or JSON: {e}")
         
         if self.creds:
             self.service = build('calendar', 'v3', credentials=self.creds)
+            logger.info("Google Calendar service initialized successfully")
         else:
             logger.warning("No Google Calendar credentials found. Calendar features will be disabled.")
 
