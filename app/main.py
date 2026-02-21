@@ -118,6 +118,34 @@ async def websocket_endpoint(websocket: WebSocket):
     
     # Flag to pause audio processing while agent is speaking
     agent_speaking = False
+    
+    # Event that gets set when client signals unmute
+    unmute_event = asyncio.Event()
+
+    async def send_and_wait_for_speak(ws, text):
+        """Send text + speak command, then WAIT for the client's unmute signal."""
+        nonlocal agent_speaking
+        
+        # Mute and flush before speaking
+        agent_speaking = True
+        await stt_service.flush_buffer()
+        
+        # Send response text and speak command
+        await ws.send_json({"type": "response", "text": text})
+        await ws.send_json({"type": "speak", "text": text})
+        logger.info(f"Sent speak: '{text[:50]}...' — waiting for unmute")
+        
+        # Wait for client to signal TTS is done (with timeout)
+        unmute_event.clear()
+        try:
+            await asyncio.wait_for(unmute_event.wait(), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("Unmute timeout — forcing unmute")
+        
+        # Flush any stale audio accumulated during TTS, then unmute
+        await stt_service.flush_buffer()
+        agent_speaking = False
+        logger.info("Unmuted after TTS complete")
 
     try:
         # Task 1: Receive ALL messages (binary audio + text control signals)
@@ -130,14 +158,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     if msg["type"] == "websocket.receive":
                         if "bytes" in msg and msg["bytes"]:
-                            # Binary data = audio chunk
                             data = msg["bytes"]
                             
-                            # Skip processing audio while agent is speaking
+                            # Skip audio while agent is speaking
                             if agent_speaking:
                                 continue
 
-                            # Feed audio to STT
                             transcript = await stt_service.add_audio(data)
                             if transcript:
                                 logger.info(f"Transcript received: '{transcript}'")
@@ -148,13 +174,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                     pass
                         
                         elif "text" in msg and msg["text"]:
-                            # Text data = control signal
                             try:
                                 data = json.loads(msg["text"])
                                 if data.get("type") == "unmute":
-                                    logger.info("Client: TTS done, resuming audio")
-                                    await stt_service.flush_buffer()
-                                    agent_speaking = False
+                                    logger.info("Client: TTS done signal received")
+                                    unmute_event.set()
                             except json.JSONDecodeError:
                                 pass
                     
@@ -163,7 +187,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         
             except WebSocketDisconnect:
                 logger.info("Client disconnected")
-                # Transcribe remaining audio
                 if not agent_speaking:
                     remaining = await stt_service.force_transcribe()
                     if remaining:
@@ -174,7 +197,6 @@ async def websocket_endpoint(websocket: WebSocket):
         # Task 2: Process transcripts and generate responses
         async def process_conversation():
             """Main brain: Waits for transcripts -> LLM response -> Browser TTS."""
-            nonlocal agent_speaking
             logger.info("Starting conversation processing loop")
             while True:
                 user_text = await transcript_queue.get()
@@ -192,18 +214,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 messages.append({"role": "assistant", "content": response_text})
                 logger.info(f"LLM Response: {response_text}")
 
-                # MUTE mic and flush buffer BEFORE sending TTS
-                agent_speaking = True
-                await stt_service.flush_buffer()
-                
-                # Send response + speak command to browser
+                # Speak the response and WAIT for TTS to finish
                 try:
-                    await websocket.send_json({"type": "response", "text": response_text})
-                    await websocket.send_json({"type": "speak", "text": response_text})
+                    await send_and_wait_for_speak(websocket, response_text)
                 except Exception as e:
-                    logger.error(f"Error sending response: {e}")
+                    logger.error(f"Error in send_and_wait_for_speak: {e}")
 
-                # Calendar event creation
+                # Calendar event creation — only after TTS has finished
                 if "creating event" in response_text.lower():
                     logger.info("Agent indicates event creation. Extracting details...")
                     extraction_json = await asyncio.to_thread(llm_service.extract_details, messages)
@@ -225,13 +242,9 @@ async def websocket_endpoint(websocket: WebSocket):
                                     calendar_service.create_event, summary, start_time, duration, attendee_email
                                 )
                                 if event:
-                                    success_msg = "Meeting scheduled successfully."
-                                    await websocket.send_json({"type": "response", "text": success_msg})
-                                    await websocket.send_json({"type": "speak", "text": success_msg})
+                                    await send_and_wait_for_speak(websocket, "Meeting scheduled successfully.")
                                 else:
-                                    error_msg = "Sorry, I couldn't schedule the meeting."
-                                    await websocket.send_json({"type": "response", "text": error_msg})
-                                    await websocket.send_json({"type": "speak", "text": error_msg})
+                                    await send_and_wait_for_speak(websocket, "Sorry, I couldn't schedule the meeting.")
                         except Exception as e:
                             logger.error(f"Error parsing extraction: {e}")
 
